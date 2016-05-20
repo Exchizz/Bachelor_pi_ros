@@ -1,27 +1,39 @@
 /*
- I will write something important here at some point..
  MMN - Mathias Mikkel Neerup manee12@student.sdu.dk
  */
 
 #include <sstream>
 #include <iostream>
 
+#include <stdint.h>
 #include "AutoQuad.h"
 #include "Session.h"
 #include "gps_conv.h"
 #include "msgs/nmea.h"
-
+#include <cmath>
 #include <sstream>
 
-#define LATITUDE_DOC   0x01
-#define LONGITUDE_DOC  0x02
-#define HDOP_DOC       0x03
-#define FIX_DOC        0x04
-#define SATTELITES_DOC 0x05
-#define ALTITUDE_DOC   0x06
 
 
-#define LOOP_RATE 10
+#define CAN_DOC_LAT 0x01
+#define CAN_DOC_LON 0x02
+#define CAN_DOC_DOP 0x03
+#define CAN_DOC_ACC 0x04
+#define CAN_DOC_VEL 0x05
+#define CAN_DOC_ALT 0x06
+
+
+#define GPRMC_SPEED_KNOTS  7
+#define GPRMC_TRUE_COURSE 8
+
+
+#define deg2rad M_PI/180.0
+//#define LATITUDE_DOC   0x01
+//#define LONGITUDE_DOC  0x02
+//#define HDOP_DOC       0x03
+//#define FIX_DOC        0x04
+//#define satellites_DOC 0x05
+//#define ALTITUDE_DOC   0x06
 
 
 #define MSG_RESET       1
@@ -41,6 +53,33 @@ private:
 	ros::Subscriber nmea_sub;
 	msgs::nmea last_gps_msg;
 	std::string topic_nmea_from_gps_sub;
+
+
+	// DOP
+	uint8_t pDOP = 4;
+	uint8_t hDOP = 4;
+	uint8_t vDOP = 4;
+	uint8_t tDOP = 4;
+	uint8_t nDOP = 4;
+	uint8_t eDOP = 4;
+	uint8_t gDOP = 4;
+
+
+	// Velocities
+	int16_t velN  = 0;
+	int16_t velE  = 0;
+	int16_t velD  = 0;
+	int16_t speed = 0;
+
+
+	// Accuracy
+	uint8_t sAcc = 0;
+	uint8_t cAcc = 0.3;
+	uint8_t hAcc = 20; // divide by 10 on drone
+	uint8_t vAcc = 30; // divide by 10 on drone
+	int16_t heading = 0;
+
+	double last_altitude = 0;
 public:
 	RegisterNode_node(int argc, char** argv): AutoQuad(argc, argv){
 		// UUID of this CAN node
@@ -48,6 +87,118 @@ public:
 		ros::NodeHandle nh("~");
 		nh.param<std::string> ("nmea_from_device_sub", topic_nmea_from_gps_sub, "/fmData/nmea_from_gps");
 		nmea_sub = nh.subscribe(topic_nmea_from_gps_sub, 1000, &RegisterNode_node::nmea_callback, this);
+	}
+
+	void nmea_callback(const msgs::nmea::ConstPtr& nmea_msg){
+		if(!nmea_msg->type.compare("GPRMC") && nmea_msg->valid == true) {
+			ROS_WARN("Recv. GPRMC");
+//			std:cout << "speed knots: " << nmea_msg->data[GPRMC_SPEED_KNOTS] << std::endl;
+//			std:cout << "speed true course: " << nmea_msg->data[GPRMC_TRUE_COURSE] << std::endl;
+			double speed_knots = atof(nmea_msg->data[GPRMC_SPEED_KNOTS].c_str());
+			double true_course = atof(nmea_msg->data[GPRMC_TRUE_COURSE].c_str());
+
+			// Convert ground velocity knots to m/s
+			double vel_g = speed_knots * 1852.0/3600.0;
+
+			// Convert from compass course (cw degrees origin y-axis)
+			// to unit circle radians (ccw origin x-axis)
+			double theta = (90.0 - true_course)*deg2rad;
+
+			velE  = (int16_t)(cos(theta)*vel_g*100); // Easting component of velocity
+			velN  = (int16_t)(sin(theta)*vel_g*100); // Northing component of velocity
+			speed = (int16_t)(speed*100); // scale up, scale down on drone
+			heading = (int16_t)(theta*100);
+
+		} else if(!nmea_msg->type.compare("GPGGA") && nmea_msg->valid == true) {
+
+			double latitude = 0;
+			double longitude = 0;
+                        double altitude = 0;
+			double hdop = 0;
+			double fix = 0;
+			double satellites = 0;
+
+			if(nmea_msg->data[1] != ""){
+				latitude =  nmea_latlon( (char* ) nmea_msg->data[1].c_str() );
+			}
+
+			if(nmea_msg->data[3] != ""){
+				 longitude = nmea_latlon( (char* ) nmea_msg->data[3].c_str() );
+			}
+
+			if(nmea_msg->data[8] != ""){
+	                         altitude = atof( nmea_msg->data[8].c_str() );
+			}
+
+			if(nmea_msg->data[7] != ""){
+				 hdop = atof( nmea_msg->data[7].c_str() );
+			}
+
+			if(nmea_msg->data[5] != ""){
+				 fix = atof(nmea_msg->data[5].c_str() );
+			}
+
+			if(nmea_msg->data[6] != ""){
+				 satellites = atof( nmea_msg->data[6].c_str() );
+			}
+
+
+                        ROS_INFO("POS in lat: %f long: %f altitude: %f ", latitude ,longitude, altitude);
+
+			velD = -(int16_t)( ( (altitude-last_altitude)/1 ) * 100); // dt = 1
+			last_altitude = altitude;
+
+			if(state == ST_ACKNOWLEDGED){
+				ROS_INFO("POS out");
+
+				// Latitude
+				canMSG canMessage = messageCreator.Create_Stream(latitude, CAN_DOC_LAT);
+				pub_recv.publish(canMessage);
+
+				// Longitude
+				canMessage = messageCreator.Create_Stream(longitude, CAN_DOC_LON);
+				pub_recv.publish(canMessage);
+
+
+				pDOP = 1.75*hdop;
+				hDOP = 1*hdop;
+				vDOP = 1.5*hdop;
+				tDOP = 1.5*hdop;
+				nDOP = 0.7*hdop;
+				eDOP = 0.7*hdop;
+				gDOP = hdop;
+
+
+				canMessage = messageCreator.Create_Stream_DOP(pDOP, hDOP, vDOP, tDOP, nDOP, eDOP, gDOP, CAN_DOC_DOP);
+				pub_recv.publish(canMessage);
+
+
+				canMessage = messageCreator.Create_Stream_VEL(velN, velE, velD, speed, CAN_DOC_VEL);
+				pub_recv.publish(canMessage);
+
+
+
+				canMessage = messageCreator.Create_Stream_ACC(satellites, fix, sAcc, cAcc, hAcc, vAcc, heading, CAN_DOC_ACC);
+				pub_recv.publish(canMessage);
+
+//				canMessage = messageCreator.Create_Stream(hdop, HDOP_DOC);
+//				pub_recv.publish(canMessage);
+
+				// FIX
+//				canMessage = messageCreator.Create_Stream(fix, FIX_DOC);
+//				pub_recv.publish(canMessage);
+
+				// satellites
+//				canMessage = messageCreator.Create_Stream(satellites, satellites_DOC);
+//				pub_recv.publish(canMessage);
+
+				// Altitude
+				canMessage = messageCreator.Create_Stream(altitude, CAN_DOC_ALT);
+				pub_recv.publish(canMessage);
+			} else {
+				ROS_WARN("Node not acknowledged");
+			}
+		 }
 	}
 
 	void onTimer(const ros::TimerEvent& event){
@@ -105,77 +256,6 @@ public:
 			}
 		}
 	}
-
-	void nmea_callback(const msgs::nmea::ConstPtr& nmea_msg){
-		// Latitude
-		if(!nmea_msg->type.compare("GPGGA") && nmea_msg->valid == true) {
-
-			double latitude = 0;
-			double longitude = 0;
-                        double altitude = 0;
-			double hdop = 0;
-			double fix = 0;
-			double sattelites = 0;
-
-			if(nmea_msg->data[1] != ""){
-				latitude =  nmea_latlon( (char* ) nmea_msg->data[1].c_str() );
-			}
-
-			if(nmea_msg->data[3] != ""){
-				 longitude = nmea_latlon( (char* ) nmea_msg->data[3].c_str() );
-			}
-
-			if(nmea_msg->data[8] != ""){
-	                         altitude = atof( nmea_msg->data[8].c_str() );
-			}
-
-			if(nmea_msg->data[7] != ""){
-				 hdop = atof( nmea_msg->data[7].c_str() );
-			}
-
-			if(nmea_msg->data[5] != ""){
-				 fix = atof(nmea_msg->data[5].c_str() );
-			}
-
-			if(nmea_msg->data[6] != ""){
-				 sattelites = atof( nmea_msg->data[6].c_str() );
-			}
-
-
-                        ROS_INFO("POS in lat: %f long: %f altitude: %f ", latitude ,longitude, altitude);
-
-			if(state == ST_ACKNOWLEDGED){
-				ROS_INFO("POS out");
-
-				// Latitude
-				canMSG canMessage = messageCreator.Create_Stream(latitude, LATITUDE_DOC);
-				pub_recv.publish(canMessage);
-
-				// Longitude
-				canMessage = messageCreator.Create_Stream(longitude, LONGITUDE_DOC);
-				pub_recv.publish(canMessage);
-
-				 // HDOP
-				canMessage = messageCreator.Create_Stream(hdop, HDOP_DOC);
-				pub_recv.publish(canMessage);
-
-				// FIX
-				canMessage = messageCreator.Create_Stream(fix, FIX_DOC);
-				pub_recv.publish(canMessage);
-
-				// Sattelites
-				canMessage = messageCreator.Create_Stream(sattelites, SATTELITES_DOC);
-				pub_recv.publish(canMessage);
-
-				// Altitude
-				canMessage = messageCreator.Create_Stream(altitude, ALTITUDE_DOC);
-				pub_recv.publish(canMessage);
-			} else {
-				ROS_WARN("Node not acknowledged");
-			}
-		 }
-	}
-
 };
 int main(int argc, char **argv){
 	AutoQuad* autoquad = new RegisterNode_node(argc, argv);

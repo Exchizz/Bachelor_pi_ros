@@ -2,7 +2,7 @@
  * MessageCreator.cpp
  *
  *  Created on: Feb 4, 2016
- *      Author: exchizz
+ *      Author: Mathias Neerup
  */
 
 #include "MessageCreator.h"
@@ -27,6 +27,62 @@ canMSG MessageCreator::Create_ReqAddr(int type, int canId){
 	return msg_out;
 }
 
+canMSG MessageCreator::Create_Stream_VEL(int16_t velN, int16_t velE, int16_t velD, int16_t speed, unsigned int doc) {
+
+	canMSG msg_out;
+	msg_out.id = CAN_FID_TELEM | CAN_EFF | (mySession.source_id << (14-3)) | (doc << (19-3));
+
+	msg_out.data[0] = (velN & 0x00FF);
+	msg_out.data[1] = ((velN & 0xFF00) >> 8);
+
+	msg_out.data[2] = (velE & 0x00FF);
+	msg_out.data[3] = ((velE & 0xFF00) >> 8);
+
+	msg_out.data[4] = (velD & 0x00FF);
+	msg_out.data[5] = ((velD & 0xFF00) >> 8);
+
+	msg_out.data[6] = (speed & 0x00FF);
+	msg_out.data[7] = ((speed & 0xFF00) >> 8);
+
+	msg_out.length = 8;
+
+	return msg_out;
+}
+canMSG MessageCreator::Create_Stream_ACC(uint8_t satellites, uint8_t fix, uint8_t sAcc, uint8_t cAcc, uint8_t hAcc, uint8_t vAcc, int16_t heading, unsigned int doc) {
+
+	canMSG msg_out;
+	msg_out.id = CAN_FID_TELEM | CAN_EFF | (mySession.source_id << (14-3)) | (doc << (19-3));
+
+	msg_out.data[0] = satellites;
+	msg_out.data[1] = fix;
+	msg_out.data[2] = sAcc;
+	msg_out.data[3] = cAcc;
+	msg_out.data[4] = hAcc;
+	msg_out.data[5] = vAcc;
+	msg_out.data[6] = (heading & 0x00FF);
+	msg_out.data[7] = ((heading & 0xFF00) >> 8);
+
+	msg_out.length = 8;
+
+	return msg_out;
+}
+canMSG MessageCreator::Create_Stream_DOP(int pDOP, int hDOP, int vDOP, int tDOP, int nDOP, int eDOP, int gDOP, unsigned int doc) {
+
+	canMSG msg_out;
+	msg_out.id = CAN_FID_TELEM | CAN_EFF | (mySession.source_id << (14-3)) | (doc << (19-3));
+
+	msg_out.data[0] = pDOP;
+	msg_out.data[1] = hDOP;
+	msg_out.data[2] = vDOP;
+	msg_out.data[3] = tDOP;
+	msg_out.data[4] = nDOP;
+	msg_out.data[5] = eDOP;
+	msg_out.data[6] = gDOP;
+
+	msg_out.length = 7;
+
+	return msg_out;
+}
 canMSG MessageCreator::Create_Stream(double value, unsigned int doc) {
 
 	canMSG msg_out;

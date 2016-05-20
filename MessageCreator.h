@@ -9,6 +9,7 @@
 #ifndef MESSAGECREATOR_H_
 #define MESSAGECREATOR_H_
 
+#include <stdint.h>
 #include "msgs/can.h"
 typedef msgs::can canMSG;
 
@@ -119,6 +120,10 @@ public:
 	canMSG Create_ReqAddr(int,int);
 	canMSG Create_SendACK();
 	Session mySession;
+	canMSG Create_Stream_VEL(int16_t,int16_t,int16_t,int16_t,unsigned int);
+	canMSG Create_Stream_ACC(uint8_t satellites, uint8_t fix, uint8_t sAcc, uint8_t cAcc, uint8_t hAcc, uint8_t vAcc, int16_t heading, unsigned int doc);
+//	canMSG Create_Stream_ACC(int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int16_t,unsigned int);
+	canMSG Create_Stream_DOP(int,int,int,int,int,int,int,unsigned int);
 	canMSG Create_Stream(double,unsigned int);
 private:
 	int uuid;
