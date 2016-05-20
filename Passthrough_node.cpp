@@ -23,8 +23,8 @@
 #define CAN_DOC_ALT 0x06
 
 
-#define GPRMC_SPEED_KNOTS  7
-#define GPRMC_TRUE_COURSE 8
+#define GPRMC_SPEED_KNOTS  6
+#define GPRMC_TRUE_COURSE  7
 
 
 #define deg2rad M_PI/180.0
@@ -92,10 +92,9 @@ public:
 	void nmea_callback(const msgs::nmea::ConstPtr& nmea_msg){
 		if(!nmea_msg->type.compare("GPRMC") && nmea_msg->valid == true) {
 			ROS_WARN("Recv. GPRMC");
-//			std:cout << "speed knots: " << nmea_msg->data[GPRMC_SPEED_KNOTS] << std::endl;
-//			std:cout << "speed true course: " << nmea_msg->data[GPRMC_TRUE_COURSE] << std::endl;
 			double speed_knots = atof(nmea_msg->data[GPRMC_SPEED_KNOTS].c_str());
 			double true_course = atof(nmea_msg->data[GPRMC_TRUE_COURSE].c_str());
+
 
 			// Convert ground velocity knots to m/s
 			double vel_g = speed_knots * 1852.0/3600.0;
@@ -104,9 +103,16 @@ public:
 			// to unit circle radians (ccw origin x-axis)
 			double theta = (90.0 - true_course)*deg2rad;
 
+
+//			ROS_WARN("Theta: %f", theta);
+			if(theta > 2*M_PI || theta < 0){
+				std::cout << "Theta: " << theta << std::endl;
+				ROS_ERROR("ERROR------------------------------------------------");
+			}
+
 			velE  = (int16_t)(cos(theta)*vel_g*100); // Easting component of velocity
 			velN  = (int16_t)(sin(theta)*vel_g*100); // Northing component of velocity
-			speed = (int16_t)(speed*100); // scale up, scale down on drone
+			speed = (int16_t)(vel_g*100); // scale up, scale down on drone
 			heading = (int16_t)(theta*100);
 
 		} else if(!nmea_msg->type.compare("GPGGA") && nmea_msg->valid == true) {
@@ -160,13 +166,14 @@ public:
 				pub_recv.publish(canMessage);
 
 
-				pDOP = 1.75*hdop;
-				hDOP = 1*hdop;
-				vDOP = 1.5*hdop;
-				tDOP = 1.5*hdop;
-				nDOP = 0.7*hdop;
-				eDOP = 0.7*hdop;
-				gDOP = hdop;
+				// multiplied by 10 in all DOP
+				pDOP = 1.75*hdop*10;
+				hDOP = 1*hdop*10;
+				vDOP = 1.5*hdop*10;
+				tDOP = 1.5*hdop*10;
+				nDOP = 0.7*hdop*10;
+				eDOP = 0.7*hdop*10;
+				gDOP = hdop*10;
 
 
 				canMessage = messageCreator.Create_Stream_DOP(pDOP, hDOP, vDOP, tDOP, nDOP, eDOP, gDOP, CAN_DOC_DOP);
