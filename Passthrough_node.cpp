@@ -1,3 +1,4 @@
+
 /*
  MMN - Mathias Mikkel Neerup manee12@student.sdu.dk
  */
@@ -28,13 +29,6 @@
 
 
 #define deg2rad M_PI/180.0
-//#define LATITUDE_DOC   0x01
-//#define LONGITUDE_DOC  0x02
-//#define HDOP_DOC       0x03
-//#define FIX_DOC        0x04
-//#define satellites_DOC 0x05
-//#define ALTITUDE_DOC   0x06
-
 
 #define MSG_RESET       1
 #define MSG_OK_ADDR     2
@@ -43,6 +37,11 @@
 
 #define ST_ACKNOWLEDGED 1
 
+
+#define FIX_SPS       1
+#define FIX_DGPS      2
+#define FIX_RTK       4
+#define FIX_RTK_FLOAT 5
 
 class RegisterNode_node : public AutoQuad {
 private:
@@ -104,7 +103,6 @@ public:
 			double theta = (90.0 - true_course)*deg2rad;
 
 
-//			ROS_WARN("Theta: %f", theta);
 			if(theta > 2*M_PI || theta < 0){
 				std::cout << "Theta: " << theta << std::endl;
 				ROS_ERROR("ERROR------------------------------------------------");
@@ -121,7 +119,7 @@ public:
 			double longitude = 0;
                         double altitude = 0;
 			double hdop = 0;
-			double fix = 0;
+			int fix = 0;
 			double satellites = 0;
 
 			if(nmea_msg->data[1] != ""){
@@ -141,11 +139,36 @@ public:
 			}
 
 			if(nmea_msg->data[5] != ""){
-				 fix = atof(nmea_msg->data[5].c_str() );
+				 fix = atoi(nmea_msg->data[5].c_str() );
 			}
 
 			if(nmea_msg->data[6] != ""){
 				 satellites = atof( nmea_msg->data[6].c_str() );
+			}
+
+
+			switch(fix){
+				case FIX_SPS:
+					ROS_INFO("GPS SPS");
+					hAcc = 25; // divide by 10 on drone
+					vAcc = 30; // divide by 10 on drone
+				break;
+				case FIX_DGPS:
+					ROS_INFO("GPS DGPS");
+					hAcc = 25; // divide by 10 on drone
+					vAcc = 30; // divide by 10 on drone
+				break;
+				case FIX_RTK:
+					ROS_INFO("GPS RTK");
+					hAcc = 5; // divide by 10 on drone
+					vAcc = 7; // divide by 10 on drone
+				break;
+				case FIX_RTK_FLOAT:
+					ROS_INFO("GPS RTK FLOAT");
+					hAcc = 25; // divide by 10 on drone
+					vAcc = 30; // divide by 10 on drone
+				break;
+
 			}
 
 
@@ -154,7 +177,7 @@ public:
 			velD = -(int16_t)( ( (altitude-last_altitude)/1 ) * 100); // dt = 1
 			last_altitude = altitude;
 
-			if(state == ST_ACKNOWLEDGED){
+			if(state == ST_ACKNOWLEDGED && fix > 0){
 				ROS_INFO("POS out");
 
 				// Latitude
@@ -176,6 +199,7 @@ public:
 				gDOP = hdop*10;
 
 
+
 				canMessage = messageCreator.Create_Stream_DOP(pDOP, hDOP, vDOP, tDOP, nDOP, eDOP, gDOP, CAN_DOC_DOP);
 				pub_recv.publish(canMessage);
 
@@ -187,17 +211,6 @@ public:
 
 				canMessage = messageCreator.Create_Stream_ACC(satellites, fix, sAcc, cAcc, hAcc, vAcc, heading, CAN_DOC_ACC);
 				pub_recv.publish(canMessage);
-
-//				canMessage = messageCreator.Create_Stream(hdop, HDOP_DOC);
-//				pub_recv.publish(canMessage);
-
-				// FIX
-//				canMessage = messageCreator.Create_Stream(fix, FIX_DOC);
-//				pub_recv.publish(canMessage);
-
-				// satellites
-//				canMessage = messageCreator.Create_Stream(satellites, satellites_DOC);
-//				pub_recv.publish(canMessage);
 
 				// Altitude
 				canMessage = messageCreator.Create_Stream(altitude, CAN_DOC_ALT);
