@@ -75,7 +75,7 @@ private:
 	// Accuracy
 	uint8_t sAcc = 0;
 	uint8_t cAcc = 0.3;
-	uint8_t hAcc = 20; // divide by 10 on drone
+	uint8_t hAcc = 25; // divide by 10 on drone
 	uint8_t vAcc = 30; // divide by 10 on drone
 	int16_t heading = 0;
 
